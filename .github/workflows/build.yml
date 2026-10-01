@@ -1,0 +1,65 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 1. Quality gate: validate content and run the 93 behavioural tests
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Build and test the web app
+        working-directory: web
+        run: |
+          npm install --no-audit --no-fund
+          node build.js ../app/src/main/assets/index.html
+          node check.js
+          node test.js
+
+      # 2. Build the signed Android app
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Restore signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then echo "Missing secret KEYSTORE_BASE64 (see README)"; exit 1; fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+
+      - name: Build APK and AAB
+        env:
+          KEYSTORE_FILE: ${{ runner.temp }}/upload.jks
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: gradle --no-daemon assembleRelease bundleRelease
+
+      - name: Fingerprint
+        run: |
+          cd app/build/outputs/apk/release
+          mv app-release.apk examen-civique.apk
+          sha256sum examen-civique.apk | tee SHA256.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: examen-civique-apk
+          path: |
+            app/build/outputs/apk/release/examen-civique.apk
+            app/build/outputs/apk/release/SHA256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: examen-civique-playstore-aab
+          path: app/build/outputs/bundle/release/app-release.aab

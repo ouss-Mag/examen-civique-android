@@ -1,0 +1,10 @@
+.gradle/
+build/
+app/build/
+local.properties
+web/node_modules/
+web/index.html
+app/src/main/assets/index.html
+*.jks
+*.keystore
+SIGNING-SECRETS.txt
